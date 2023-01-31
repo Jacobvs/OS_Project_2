@@ -1,0 +1,5 @@
+- This solution uses semaphores to ensure that the takeoff of a plane is synchronized with the use of regions and runways.
+- Deadlocks are avoided by using sem_trywait() before sem_wait(). sem_trywait() returns -1 if the semaphore value is 0, in which case the plane thread waits using sem_wait().
+- Deadlocks can be guaranteed to occur if a large plane acquires regions 1, 2 and 3 and another large plane acquires regions 2, 3 and 4, since both would be waiting for region 3.
+- To minimize decreased parallelism, the solution uses sem_trywait() before sem_wait(). This means that the plane thread can proceed if the regions are available, and only waits if the regions are already in use.
+- However, the use of sem_wait() for region acquiring will decrease parallelism to some extent, as multiple threads may have to wait for a region to become available before they can proceed. But, this trade-off ensures that deadlocks are avoided and that the program runs smoothly.
