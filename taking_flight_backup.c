@@ -83,7 +83,6 @@ small planes:
 #include <semaphore.h>
 #include <unistd.h>
 #include <sys/shm.h>
-#include <stdbool.h>
 
 #define NUM_LARGE_PLANES 2//15
 #define NUM_SMALL_PLANES 3//30
@@ -109,20 +108,12 @@ int runway_regions[NUM_RUNWAYS][3] = {
         {3, 2}
 };
 
-typedef struct __region_lock{
-    sem_t sem;
-    bool locked;
-} region_lock;
-
-void init(region_lock *lock) {
-    lock->locked = false;
-    sem_init(&lock->sem, 0, 1);
-}
 
 //int plane_regions[NUM_LARGE_PLANES + NUM_SMALL_PLANES][2];
 int plane_type[NUM_LARGE_PLANES + NUM_SMALL_PLANES];
 
-region_lock runway[NUM_REGIONS];
+sem_t runway[NUM_REGIONS];
+
 
 void choose_regions(int type, int *regions) {
     int chosen_runway = 0;
@@ -137,25 +128,6 @@ void choose_regions(int type, int *regions) {
         regions[1] = runway_regions[chosen_runway][1];
     }
 }
-
-//void check_locks(int id, int type, int regions[3], int is_takeoff){
-//    for (int i = 0; i < (type == 0 ? 3 : 2); i++) {
-//        int region = regions[i];
-//        printf("Checking region: %d\n", region);
-//        int value, trywaitvalue;
-//        sem_getvalue(&runway[region], &value);
-//        printf("Semaphore value before trywait: %d \n", value);
-//        trywaitvalue = sem_trywait(&runway[region]);
-//        printf("Return value of trywait: %d\n", trywaitvalue);
-//        if (trywaitvalue == -1) {
-//            printf("Plane Thread %d (%s) must wait to %s \n", id, (type == 0) ? "Large" : "Small", (is_takeoff == 1) ? "takeoff" : "land");
-//            int waitvalue = sem_wait(&runway[region]);
-//            printf("Wait value after trywait: %d\n", waitvalue);
-//            printf("Thread %d has acquired the semaphore\n", id);
-//        }
-//    }
-//}
-
 
 void *plane_thread(void *arg) {
     int id = (int) arg;
@@ -179,22 +151,6 @@ void *plane_thread(void *arg) {
         printf("]\n");
 
         // Check if regions are available
-        //check_locks(id, type, regions, 1);
-        for (int i = 0; i < (type == 0 ? 3 : 2); i++) {
-            int region = regions[i];
-            printf("Checking region: %d\n", region);
-            int value, trywaitvalue;
-            sem_getvalue(&runway[region], &value);
-            printf("Semaphore value before trywait: %d \n", value);
-            trywaitvalue = sem_trywait(&runway[region]);
-            printf("Return value of trywait: %d\n", trywaitvalue);
-            if (trywaitvalue == -1) {
-                printf("Plane Thread %d (%s) must wait to take off. \n", id, (type == 0) ? "Large" : "Small");
-                int waitvalue = sem_wait(&runway[region]);
-                printf("Wait value after trywait: %d\n", waitvalue);
-                printf("Thread %d has acquired the semaphore\n", id);
-            }
-        }
 
         //TODO: Check to make sure doing this sequentially wouldn't cause an issue by other planes taking a section
 //        for (i = 0; i < (type == 0 ? 3 : 2); i++) {
@@ -204,7 +160,21 @@ void *plane_thread(void *arg) {
 //                sem_wait(&runway[region]);
 //            }
 //        }
-
+        for (i = 0; i < (type == 0 ? 3 : 2); i++) {
+            region = regions[i];
+            printf("Checking region: %d\n", region);
+            int value, trywaitvalue;
+            sem_getvalue(&runway[region], &value);
+            printf("Semaphore value before trywait: %d \n", value);
+            trywaitvalue = sem_trywait(&runway[region]);
+            printf("Return value of trywait: %d\n", trywaitvalue);
+            if (trywaitvalue == -1) {
+                printf("Plane Thread %d (%s) must wait to takeoff \n", id, (type == 0) ? "Large" : "Small");
+                int waitvalue = sem_wait(&runway[region]);
+                printf("Wait value after trywait: %d\n", waitvalue);
+                printf("Thread %d has acquired the semaphore\n", id);
+            }
+        }
 
 
         // TAKEOFF
@@ -232,28 +202,11 @@ void *plane_thread(void *arg) {
         printf("]\n");
 
         // Check if regions are available
-//        for (i = 0; i < (type == 0 ? 3 : 2); i++) {
-//            region = regions[i];
-//            if (sem_trywait(&runway[region]) == -1) {
-//                printf("Plane Thread %d (%s) must wait to land \n", id, (type == 0) ? "Large" : "Small");
-//                sem_wait(&runway[region]);
-//            }
-//        }
-        //check_locks(id, type, regions, 0);
-
-        for (int i = 0; i < (type == 0 ? 3 : 2); i++) {
-            int region = regions[i];
-            printf("Checking region: %d\n", region);
-            int value, trywaitvalue;
-            sem_getvalue(&runway[region], &value);
-            printf("Semaphore value before trywait: %d \n", value);
-            trywaitvalue = sem_trywait(&runway[region]);
-            printf("Return value of trywait: %d\n", trywaitvalue);
-            if (trywaitvalue == -1) {
+        for (i = 0; i < (type == 0 ? 3 : 2); i++) {
+            region = regions[i];
+            if (sem_trywait(&runway[region]) == -1) {
                 printf("Plane Thread %d (%s) must wait to land \n", id, (type == 0) ? "Large" : "Small");
-                int waitvalue = sem_wait(&runway[region]);
-                printf("Wait value after trywait: %d\n", waitvalue);
-                printf("Thread %d has acquired the semaphore\n", id);
+                sem_wait(&runway[region]);
             }
         }
 
@@ -280,15 +233,10 @@ int main(int argc, char *argv[]) {
 //    runway = shmat(shmid, NULL, 0);
 
     //srand(time(NULL));
-
-    for(int i = 0; i < NUM_REGIONS; i++) {
-        init(&runway[i]);
-    }
-
     srand(12345);
-//    for (i = 0; i <= NUM_REGIONS; i++) {
-//        sem_init(&runway[i]->sem, 0, 1);
-//    }
+    for (i = 0; i < NUM_REGIONS; i++) {
+        sem_init(&runway[i], 0, 5);
+    }
 
     for (i = 0; i < NUM_LARGE_PLANES + NUM_SMALL_PLANES; i++) {
         //plane_regions[i][0] = i % NUM_REGIONS;
@@ -296,6 +244,13 @@ int main(int argc, char *argv[]) {
         plane_type[i] = (i < NUM_LARGE_PLANES) ? 1: 0;
         pthread_create(&planes[i], NULL, plane_thread, (void *) i);
     }
+
+//    for (i = 0; i < NUM_LARGE_PLANES + NUM_SMALL_PLANES; i++) {
+//        plane_regions[i][0] = i % NUM_REGIONS;
+//        plane_regions[i][1] = (i + 1) % NUM_REGIONS;
+//        plane_type[i] = 1;
+//        pthread_create(&planes[i], NULL, plane_thread, (void *) i);
+//    }
 
     for (i = 0; i < NUM_LARGE_PLANES + NUM_SMALL_PLANES; i++) {
         pthread_join(planes[i], NULL);
@@ -307,5 +262,6 @@ int main(int argc, char *argv[]) {
 
     return 0;
 }
+
 
 
